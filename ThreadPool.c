@@ -117,7 +117,10 @@ void *ThreadDo(void *args)
                 pool->thCntWork--;
                 if (pool->thCntWork == 0)
                 {
-                    SempthereSignal(pool->cond);
+                    if (pool->queue->jobCnt > 0)
+                        SempthereSignal(pool->queue->hasJob);
+                    else
+                        SempthereSignal(pool->cond);
                 }
                 pthread_mutex_unlock(&pool->rwMutex);
             }
