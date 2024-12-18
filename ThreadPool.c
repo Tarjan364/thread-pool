@@ -56,6 +56,12 @@ struct ThreadPool* ThreadPoolInit(int num)
     pool->queue = (struct JobQueue *)malloc(sizeof(struct JobQueue));
     CHECK_GOTO((pool->queue == NULL), "malloc fail", LAB_END);
 
+    pool->allIdle = (struct BSemphere *)malloc(sizeof(struct BSemphere));
+    CHECK_GOTO((pool->allIdle == NULL), "malloc fail", LAB_END);
+
+    ret = BSemphereInit(pool->allIdle);
+    CHECK_GOTO((ret != OK), "BSemphere init fail", LAB_END);
+
     pool->thCnt = 0;
     for (int i = 0; i < num; i++)
     {
@@ -73,7 +79,6 @@ struct ThreadPool* ThreadPoolInit(int num)
     pool->keepAlive = 0;
 
     pthread_mutex_init(&pool->rwMutex, NULL);
-    pthread_cond_init(&pool->cond, NULL);
 
     return pool;
 
@@ -83,6 +88,7 @@ LAB_END:
         RELEASE(&pool->threads[i]);
     }
     RELEASE(pool->queue);
+    RELEASE(pool->allIdle);
     RELEASE(pool);
     return NULL;
 }
@@ -120,7 +126,7 @@ void *ThreadDo(void *args)
                     if (pool->queue->jobCnt > 0)
                         SempthereSignal(pool->queue->hasJob);
                     else
-                        SempthereSignal(pool->cond);
+                        SempthereSignal(pool->allIdle);
                 }
                 pthread_mutex_unlock(&pool->rwMutex);
             }
@@ -170,7 +176,10 @@ struct Job* JobQueuePull(struct JobQueue *queue)
     pthread_mutex_lock(&queue->rwMutex);
 
     if (queue->jobCnt == 0)
+    {
+        pthread_mutex_unlock(&queue->rwMutex);
         return NULL;
+    }
 
     struct Job* job = queue->front;
     if (queue->jobCnt == 1)
@@ -233,10 +242,8 @@ int Pause()
 
 int Wait(struct ThreadPool *pool)
 {
-    pthread_mutex_lock(&pool->rwMutex);
     while (pool->queue->jobCnt > 0 || pool->thCntWork > 0)
     {
-        pthread_cond_wait(&pool->cond, &pool->rwMutex);
+        SempthereWait(pool->allIdle);
     }
-    pthread_mutex_unlock(&pool->rwMutex);
 }

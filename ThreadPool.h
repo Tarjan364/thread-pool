@@ -71,7 +71,7 @@ struct ThreadPool {
     struct MyThread *threads;
     struct JobQueue *queue;
     pthread_mutex_t rwMutex;
-    pthread_cond_t cond;
+    struct BSemphere *allIdle;
 };
 
 /* 函数定义 */
